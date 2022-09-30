@@ -5,7 +5,6 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
-
 void oss();
 void worker();
 
@@ -15,12 +14,11 @@ void worker();
 int opt, flag = 0, max_proc = 18, def_time = 100, errno, pid = 0, * oss = NULL, * worker = NULL;
 time_t start = 0;
 
-
 int main(int argc, char * argv[]) {
   system("clear");
 
-  signal(SIGINT, signal_abort); // Abort for Ctrl+C 
-  signal(SIGALRM, signal_timer); //Abort for end of termination time 
+  signal(SIGINT, signal_abort); /*Abort for Ctrl+C*/ 
+  signal(SIGALRM, signal_timer); /*Abort for end of termination time*/ 
 
   /* Parsing Command Line argument */
   while ((opt = getopt(argc, argv, "hn:")) != -1) {
@@ -55,7 +53,8 @@ int main(int argc, char * argv[]) {
       return 1;
 
     }
-}
+
+  }
   if (flag == 0) {
     max_proc = atoi(argv[1]);
     if (max_proc > MAXPROC) {
@@ -83,8 +82,100 @@ int main(int argc, char * argv[]) {
    exit(1);
   }
 
-/* Deallocate Shared Memory */
-  shmdt( shm_ptr );    // Detach from the shared memory segment
-  shmctl( shm_id, IPC_RMID, NULL ); // Free shared memory segment shm_id
-  exit(EXIT_SUCCESS);
+  /* Forking child processes  */
+  switch ( fork() )
+    {
+    case -1:
+        fprintf(stderr,"Failed to fork\n");
+        return ( 1 );
+    case 0:
+        worker();
+        break;
+    default:
+        oss();
+        break;
+    }
+    return ( 0 );
 }
+void oss()
+{
+    /* Get shared memory segment identifier*/
+    int i;
+    int shmid = shmget ( SHMKEY, BUFF_SZ, 0777 | IPC_CREAT );
+    if ( shmid == -1 ) {
+       fprintf(stderr,"oss: ... Error in shmget ...\n");
+       exit (1);
+    }
+    /* Get the pointer to shared block*/
+    char * paddr = ( char * )( shmat ( shmid, 0, 0 ) );
+    int * pint = ( int * )( paddr );
+    for ( i = 0; i < 10; i++ ) {
+       sleep ( 2 );
+       *pint = 10 * i ;             /* Write into the shared area. */
+       printf("oss: Written Val.: = %d\n",*pint);
+    }
+    shmdt(pint);
+    shmctl(shmid,IPC_RMID,NULL);
+}
+void worker()
+{
+    int i;
+    sleep ( 5 );
+    int shmid = shmget ( SHMKEY, BUFF_SZ, 0777 );
+    if ( shmid == -1 ) {
+       fprintf(stderr,"worker: ... Error in shmget ...\n");
+       exit ( 1 );
+    }
+    int * cint = ( int * )( shmat ( shmid, 0, 0 ) );
+    for ( i = 0; i < 10; i++ ) {
+       sleep ( 1 );
+       printf("worker: Read Val. = %d\n",*cint);
+    }
+    shmdt(cint);
+}
+
+/*exec*/
+char* args[] = {"./worker", m,n, paddr};
+/*execvp(args[0], args);*/
+execlp(args[0],args[0],args[1],args[2],args[3]);
+fprintf(stderr,"Exec failed, terminating\n");
+exit(1);
+
+  /* Deallocate Shared Memory */
+  shmdt( shm_ptr );    /* Detach from the shared memory segment*/
+  shmctl( shm_id, IPC_RMID, NULL ); /* Free shared memory segment shm_id*/
+  exit(EXIT_SUCCESS);
+
+
+/*Display information */
+void printInfo() {
+  printf("Command line arguments are as follows:\n");
+  printf("-h\tDisplays this message and terminates.:\n");
+  printf("-n x\tProgram creates n processes (default of 18, domain of [1,18]\n");
+  printf("-m x\tEach child process will increment the clock by 10000000\n");
+  
+}
+
+/* signal handle for time out */
+void signal_timer(int signal){
+     perror("master: Warning: timer ends");
+    for (i=0; i < max_proc; i++) 
+        kill(slave[i], signal);
+     deallocate_shm();
+     exit(EXIT_FAILURE);
+  
+}
+
+
+/* signal handle for receiving CTRL + C */
+void signal_abort(){ 
+    perror("master: Warning: CTRL + C received, master is terminating");
+    killpg((*master), SIGTERM);
+    killpg((*slave), SIGTERM);
+    for(i = 0; i < max_proc; i++){
+    wait(NULL);
+      }
+    deallocate_shm();
+    exit(EXIT_FAILURE);
+}
+
